@@ -1,0 +1,4 @@
+energy_source_id,energy_source,source_type,is_renewable,co2_factor_kg_per_kwh
+1,Grid Electricity,Imported,False,0.052
+2,Biogas CHP,Self-generated,True,0.0
+3,Solar PV,Self-generated,True,0.0

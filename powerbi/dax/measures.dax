@@ -1,0 +1,211 @@
+// =====================================================================
+//  DAX measures — WWTP Energy Performance
+//  Create a blank table named "_Measures" (Enter data → OK) and add
+//  each measure below to it. Display folders are noted in [brackets].
+//  Prerequisites: relationships as in docs/data-model.md, and 'Date'
+//  marked as the date table on 'Date'[date].
+// =====================================================================
+
+
+// ---------- [1 Energy] ----------------------------------------------
+
+Total Energy (kWh) =
+SUM ( 'Energy Consumption'[energy_kwh] )
+
+Total Energy (MWh) =
+DIVIDE ( [Total Energy (kWh)], 1000 )
+
+Aeration Energy (kWh) =
+CALCULATE ( [Total Energy (kWh)], 'Process Area'[process_area] = "Biological Treatment (Aeration)" )
+
+Aeration Share % =
+DIVIDE ( [Aeration Energy (kWh)], CALCULATE ( [Total Energy (kWh)], REMOVEFILTERS ( 'Process Area' ) ) )
+
+Process Share % =
+DIVIDE ( [Total Energy (kWh)], CALCULATE ( [Total Energy (kWh)], REMOVEFILTERS ( 'Process Area' ) ) )
+
+
+// ---------- [2 Operations] ------------------------------------------
+
+Treated Volume (m3) =
+SUM ( Operations[influent_flow_m3] )
+
+COD Removed (kg) =
+SUM ( Operations[cod_removed_kg] )
+
+Avg Daily Flow (m3/d) =
+AVERAGEX ( VALUES ( 'Date'[date] ), CALCULATE ( [Treated Volume (m3)] ) )
+
+Total Rainfall (mm) =
+AVERAGEX ( VALUES ( Plant[plant_code] ), CALCULATE ( SUM ( Operations[rainfall_mm] ) ) )
+
+Biogas Produced (Nm3) =
+SUM ( Operations[biogas_produced_nm3] )
+
+Avg Effluent NH4 (mg/L) =
+AVERAGE ( Operations[effluent_nh4_mg_l] )
+
+
+// ---------- [3 Efficiency KPIs] -------------------------------------
+
+Specific Energy (kWh/m3) =
+DIVIDE ( [Total Energy (kWh)], [Treated Volume (m3)] )
+
+Energy per kg COD Removed (kWh/kg) =
+DIVIDE ( [Total Energy (kWh)], [COD Removed (kg)] )
+
+Energy per PE (kWh/PE/yr) =
+VAR _days = COUNTROWS ( 'Date' )
+VAR _pe   = SUM ( Plant[design_capacity_pe] )
+RETURN
+    DIVIDE ( [Total Energy (kWh)], _pe ) * DIVIDE ( 365, _days )
+
+Specific Energy 30d Rolling =
+CALCULATE (
+    [Specific Energy (kWh/m3)],
+    DATESINPERIOD ( 'Date'[date], MAX ( 'Date'[date] ), -30, DAY )
+)
+
+
+// ---------- [4 Supply & Self-sufficiency] ---------------------------
+
+Energy Supplied (kWh) =
+SUM ( 'Energy Supply'[energy_supplied_kwh] )
+
+Grid Import (kWh) =
+CALCULATE ( [Energy Supplied (kWh)], 'Energy Source'[energy_source] = "Grid Electricity" )
+
+Self-Generated Energy (kWh) =
+CALCULATE ( [Energy Supplied (kWh)], 'Energy Source'[source_type] = "Self-generated" )
+
+Biogas CHP Energy (kWh) =
+CALCULATE ( [Energy Supplied (kWh)], 'Energy Source'[energy_source] = "Biogas CHP" )
+
+Solar PV Energy (kWh) =
+CALCULATE ( [Energy Supplied (kWh)], 'Energy Source'[energy_source] = "Solar PV" )
+
+Energy Self-Sufficiency % =
+DIVIDE ( [Self-Generated Energy (kWh)], [Total Energy (kWh)] )
+
+Renewable Share % =
+DIVIDE (
+    CALCULATE ( [Energy Supplied (kWh)], 'Energy Source'[is_renewable] = TRUE () ),
+    CALCULATE ( [Energy Supplied (kWh)], REMOVEFILTERS ( 'Energy Source' ) )
+)
+
+
+// ---------- [5 Cost & Carbon] ---------------------------------------
+
+Grid Energy Cost (EUR) =
+SUMX (
+    VALUES ( 'Date'[year_month] ),
+    VAR _price =
+        LOOKUPVALUE ( 'Energy Tariff'[grid_price_eur_per_kwh], 'Energy Tariff'[year_month], 'Date'[year_month] )
+    RETURN
+        CALCULATE ( [Grid Import (kWh)] ) * _price
+)
+
+Avoided Cost from Self-Generation (EUR) =
+SUMX (
+    VALUES ( 'Date'[year_month] ),
+    VAR _price =
+        LOOKUPVALUE ( 'Energy Tariff'[grid_price_eur_per_kwh], 'Energy Tariff'[year_month], 'Date'[year_month] )
+    RETURN
+        CALCULATE ( [Self-Generated Energy (kWh)] ) * _price
+)
+
+Energy Cost per m3 (EUR/m3) =
+DIVIDE ( [Grid Energy Cost (EUR)], [Treated Volume (m3)] )
+
+CO2 Emissions (tCO2e) =
+DIVIDE (
+    SUMX (
+        'Energy Source',
+        CALCULATE ( [Energy Supplied (kWh)] ) * 'Energy Source'[co2_factor_kg_per_kwh]
+    ),
+    1000
+)
+
+CO2 Intensity (gCO2e/m3) =
+DIVIDE ( [CO2 Emissions (tCO2e)] * 1000000, [Treated Volume (m3)] )
+
+
+// ---------- [6 Targets] ---------------------------------------------
+
+Target Specific Energy (kWh/m3) =
+// Volume-weighted target, so it stays correct across plants and years
+VAR _t =
+    ADDCOLUMNS (
+        SUMMARIZE ( Operations, 'Date'[year], Plant[plant_code] ),
+        "@vol", [Treated Volume (m3)],
+        "@tgt",
+            LOOKUPVALUE (
+                Targets[target_kwh_per_m3],
+                Targets[year], 'Date'[year],
+                Targets[plant_code], Plant[plant_code]
+            )
+    )
+RETURN
+    DIVIDE ( SUMX ( _t, [@vol] * [@tgt] ), SUMX ( _t, [@vol] ) )
+
+Variance vs Target % =
+DIVIDE ( [Specific Energy (kWh/m3)] - [Target Specific Energy (kWh/m3)], [Target Specific Energy (kWh/m3)] )
+
+Target Status =
+SWITCH (
+    TRUE (),
+    ISBLANK ( [Variance vs Target %] ), BLANK (),
+    [Variance vs Target %] <= 0, "✔ On target",
+    [Variance vs Target %] <= 0.05, "▲ Within 5 %",
+    "✖ Above target"
+)
+
+Target Status Colour =
+// Use with Format → Conditional formatting → Field value
+SWITCH (
+    TRUE (),
+    ISBLANK ( [Variance vs Target %] ), BLANK (),
+    [Variance vs Target %] <= 0, "#0ca30c",
+    [Variance vs Target %] <= 0.05, "#fab219",
+    "#d03b3b"
+)
+
+
+// ---------- [7 Time intelligence] -----------------------------------
+
+Total Energy PY (kWh) =
+CALCULATE ( [Total Energy (kWh)], SAMEPERIODLASTYEAR ( 'Date'[date] ) )
+
+Energy YoY % =
+DIVIDE ( [Total Energy (kWh)] - [Total Energy PY (kWh)], [Total Energy PY (kWh)] )
+
+Specific Energy PY (kWh/m3) =
+CALCULATE ( [Specific Energy (kWh/m3)], SAMEPERIODLASTYEAR ( 'Date'[date] ) )
+
+Specific Energy YoY % =
+DIVIDE ( [Specific Energy (kWh/m3)] - [Specific Energy PY (kWh/m3)], [Specific Energy PY (kWh/m3)] )
+
+Normalised Energy Savings vs PY (kWh) =
+// Savings at this period's treated volume, so wet/dry years compare fairly
+( [Specific Energy PY (kWh/m3)] - [Specific Energy (kWh/m3)] ) * [Treated Volume (m3)]
+
+
+// ---------- [8 Labels] ----------------------------------------------
+
+Selected Period Label =
+VAR _min = MIN ( 'Date'[date] )
+VAR _max = MAX ( 'Date'[date] )
+RETURN
+    FORMAT ( _min, "dd MMM yyyy" ) & " – " & FORMAT ( _max, "dd MMM yyyy" )
+
+Selected Plant Label =
+IF (
+    ISFILTERED ( Plant[plant_name] ) && HASONEVALUE ( Plant[plant_name] ),
+    SELECTEDVALUE ( Plant[plant_name] ),
+    "All plants (" & COUNTROWS ( VALUES ( Plant[plant_code] ) ) & ")"
+)
+
+Last Data Date =
+VAR _lastKey = CALCULATE ( MAX ( 'Energy Consumption'[date_key] ), REMOVEFILTERS () )
+RETURN
+    LOOKUPVALUE ( 'Date'[date], 'Date'[date_key], _lastKey )

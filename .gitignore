@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Power BI
+*.pbix.bak
+.pbi/cache.abf
+**/.pbi/localSettings.json
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

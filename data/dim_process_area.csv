@@ -1,0 +1,9 @@
+process_area_id,process_area,process_group
+1,Inlet Pumping,Pumping
+2,Preliminary Treatment,Pre-treatment
+3,Primary Treatment,Pre-treatment
+4,Biological Treatment (Aeration),Biological
+5,Secondary Clarification & RAS,Biological
+6,Sludge Treatment & Dewatering,Sludge
+7,Odour Control,Auxiliary
+8,Buildings & Auxiliaries,Auxiliary

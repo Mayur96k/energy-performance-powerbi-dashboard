@@ -1,0 +1,6 @@
+plant_code,plant_name,region,treatment_process,design_capacity_pe,design_flow_m3_per_day,has_anaerobic_digestion,solar_pv_kwp
+WWTP01,Riverside WWTP,North,Activated sludge + anaerobic digestion,450000,95000,True,600
+WWTP02,Lakeview WWTP,East,Activated sludge + anaerobic digestion,280000,60000,True,350
+WWTP03,Greenfield WWTP,South,Membrane bioreactor (MBR),120000,26000,False,250
+WWTP04,Hillcrest WWTP,West,Activated sludge (extended aeration),75000,16000,False,0
+WWTP05,Bayside WWTP,Coastal,Activated sludge + anaerobic digestion,190000,42000,True,400
